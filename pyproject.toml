@@ -51,6 +51,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+legacy = [
+  "torch>=2.6", # Loading older official PyTorch .bin checkpoints.
+]
 docs = [
     "sphinx>=8.2.3",
     "sphinx-book-theme>=1.1.4",  # Older versions fail to pin pydata-sphinx-theme

@@ -18,6 +18,9 @@ Tunix supports the following models:
 | Qwen 2.5 | 0.5B, 1.5B, 3B, 7B |
 | Qwen 3 | 0.6B, 1.7B, 4B, 8B, 14B, 30B, 32B |
 | Qwen 3.5 | 35B, 397B |
+| GPT-NeoX / Pythia | 14M, 70M, 160M |
+| GPT-Neo | 125M |
+| OPT | 350M |
 
 ### Model Sources
 
@@ -94,6 +97,21 @@ model, model_path = AutoModel.from_pretrained(
 
 print(f"Model loaded from: {model_path}")
 ```
+
+### GPT-NeoX, GPT-Neo, and OPT
+
+The following decoder-only checkpoints use the same `AutoModel.from_pretrained`
+interface:
+
+- `EleutherAI/pythia-14m`, `EleutherAI/pythia-70m`, `EleutherAI/pythia-160m`
+- `EleutherAI/gpt-neo-125m`
+- `facebook/opt-350m`
+
+They support Tunix's native `Sampler`, causal language-model fine-tuning, and Qwix
+LoRA. Pythia and GPT-Neo load safetensors weights. The official OPT-350M checkpoint
+contains `pytorch_model.bin`; install `google-tunix[legacy]` to enable its local
+conversion to a temporary safetensors file. The source checkpoint is preserved.
+Sharded PyTorch `.bin` checkpoints are not supported.
 
 ### Specifying Model Source
 

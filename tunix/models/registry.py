@@ -541,4 +541,47 @@ MODEL_CATALOG = (
         model_config_id='qwen3p5_397b_a17b',
         model_config_category='qwen3',
     ),
+    # GPT-NeoX / Pythia models.
+    naming.ModelNaming(
+        model_id='EleutherAI/pythia-14m',
+        model_name='pythia-14m',
+        model_family='pythia',
+        model_version='14m',
+        model_config_id='pythia_14m',
+        model_config_category='gpt_neox',
+    ),
+    naming.ModelNaming(
+        model_id='EleutherAI/pythia-70m',
+        model_name='pythia-70m',
+        model_family='pythia',
+        model_version='70m',
+        model_config_id='pythia_70m',
+        model_config_category='gpt_neox',
+    ),
+    naming.ModelNaming(
+        model_id='EleutherAI/pythia-160m',
+        model_name='pythia-160m',
+        model_family='pythia',
+        model_version='160m',
+        model_config_id='pythia_160m',
+        model_config_category='gpt_neox',
+    ),
+    # GPT-Neo models.
+    naming.ModelNaming(
+        model_id='EleutherAI/gpt-neo-125m',
+        model_name='gpt-neo-125m',
+        model_family='gpt_neo',
+        model_version='125m',
+        model_config_id='gpt_neo_125m',
+        model_config_category='gpt_neo',
+    ),
+    # OPT models.
+    naming.ModelNaming(
+        model_id='facebook/opt-350m',
+        model_name='opt-350m',
+        model_family='opt',
+        model_version='350m',
+        model_config_id='opt_350m',
+        model_config_category='opt',
+    ),
 )

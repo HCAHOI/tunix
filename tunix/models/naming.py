@@ -19,11 +19,10 @@ This module provides utility functions to parse and handle model names and
 convert them to internal model naming structures.
 """
 
-
 import dataclasses
 from typing import NewType
-import immutabledict
 
+import immutabledict
 
 HFModelId = NewType('HFModelId', str)
 ConfigId = NewType('ConfigId', str)
@@ -66,6 +65,7 @@ class ModelNaming:
       model version, used in the ModelConfig class. e.g., "gemma_2b_it" or
       "qwen2p5_0p5b".
   """
+
   # TODO(b/451662153): use HFModelId and ConfigId throughout, add validation,
   # and then remove str support.
   model_id: HFModelId | ConfigId | str | None = None
@@ -149,6 +149,9 @@ _HF_MODEL_FAMILY_INFO_MAPPING = immutabledict.immutabledict({
     'deepseek-r1-distill-qwen-': _ModelFamilyInfo(
         family='deepseek_r1_distill_qwen', config_category='qwen2'
     ),
+    'pythia-': _ModelFamilyInfo(family='pythia', config_category='gpt_neox'),
+    'gpt-neo-': _ModelFamilyInfo(family='gpt_neo', config_category='gpt_neo'),
+    'opt-': _ModelFamilyInfo(family='opt', config_category='opt'),
 })
 
 # Config id model family info mapping.
@@ -167,6 +170,9 @@ _CONFIG_ID_MODEL_FAMILY_INFO_MAPPING = immutabledict.immutabledict({
     'deepseek_r1_distill_qwen_': _ModelFamilyInfo(
         family='deepseek_r1_distill_qwen', config_category='qwen2'
     ),
+    'pythia_': _ModelFamilyInfo(family='pythia', config_category='gpt_neox'),
+    'gpt_neo_': _ModelFamilyInfo(family='gpt_neo', config_category='gpt_neo'),
+    'opt_': _ModelFamilyInfo(family='opt', config_category='opt'),
 })
 
 
