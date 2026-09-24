@@ -14,18 +14,13 @@
 
 """Utils for loading and converting GPT-NeoX / Pythia PT weights."""
 
-import contextlib
 import pathlib
-import shutil
-import tempfile
 
 import jax
 import jax.numpy as jnp
-import safetensors
 from tunix.models import safetensors_loader
 from tunix.models import safetensors_saver
 from tunix.models.gpt_neox import model as model_lib
-from tunix.utils import torch_utils
 
 
 def _get_key_and_transform_mapping(cfg: model_lib.ModelConfig):
@@ -114,127 +109,45 @@ def create_model_from_safe_tensors(
   )
 
 
+def _state_key_to_safetensors_key(lora_name: str) -> str:
+  """Maps a LoRA module path to its Hugging Face weight name."""
+  if lora_name == "lm_head":
+    return "embed_out.weight"
+  return f"gpt_neox.{lora_name}.weight".replace(".attn.", ".attention.")
+
+
 def save_lora_merged_model_as_safetensors(
     local_model_path: str,
     output_dir: str,
-    lora_model,
+    lora_model: model_lib.GPTNeoX,
     rank: int,
     alpha: float,
-):
-  """Merges LoRA weights and copies checkpoint metadata to output_dir.
+) -> None:
+  """Saves merged LoRA weights using Tunix's single-file safetensors saver.
 
   Args:
-    local_model_path: Directory with one model.safetensors or pytorch_model.bin.
+    local_model_path: Directory containing one model.safetensors checkpoint.
     output_dir: Destination directory for merged weights and metadata.
-    lora_model: NNX model with LoRA adapters and a model configuration.
+    lora_model: Model with LoRA adapters.
     rank: LoRA rank.
     alpha: LoRA scaling factor.
 
   Raises:
-    ValueError: The output would overwrite the source, the input is sharded,
-      or a linear weight requires an unsupported transformation.
-    ImportError: PyTorch conversion dependencies are unavailable.
+    ValueError: The output would overwrite the source, or the checkpoint does
+      not contain a single model.safetensors file.
   """
   source = pathlib.Path(local_model_path).resolve()
   output = pathlib.Path(output_dir).resolve()
   if source == output or output in source.parents:
     raise ValueError("Merged output must not overwrite the source checkpoint")
-  with _safetensors_directory(local_model_path) as weights_dir:
-    if not (pathlib.Path(weights_dir) / "model.safetensors").is_file():
-      raise ValueError(
-          "LoRA merge requires a single model.safetensors or "
-          "pytorch_model.bin checkpoint; sharded export is not supported."
-      )
-    key_mapping = _get_key_and_transform_mapping(lora_model.config)
-    _save_lora_merged_model(
-        weights_dir, output_dir, lora_model, rank, alpha, key_mapping
-    )
-  if weights_dir != local_model_path:
-    for file in pathlib.Path(local_model_path).iterdir():
-      if (
-          file.is_file()
-          and file.suffix not in (".bin", ".safetensors")
-          and not file.name.endswith(".index.json")
-      ):
-        shutil.copy2(file, pathlib.Path(output_dir) / file.name)
-
-
-@contextlib.contextmanager
-def _safetensors_directory(file_dir: str):
-  """Yields a safetensors directory without modifying the source checkpoint.
-
-  Args:
-    file_dir: Checkpoint directory or GCS path. Local PyTorch checkpoints must
-      contain a single pytorch_model.bin file.
-
-  Yields:
-    The input directory for safetensors weights, or a temporary directory for
-    converted PyTorch weights. The temporary directory exists only within the
-    context manager.
-
-  Raises:
-    ValueError: The input is a sharded PyTorch checkpoint.
-    ImportError: Conversion requires the optional legacy dependencies.
-  """
-  path = pathlib.Path(file_dir).expanduser()
-  if file_dir.startswith("gs://") or any(path.glob("*.safetensors")):
-    yield file_dir
-    return
-  if (path / "pytorch_model.bin.index.json").is_file():
-    raise ValueError(
-        "Sharded PyTorch checkpoints are not supported. Provide a single "
-        "pytorch_model.bin or safetensors weights."
-    )
-  file = path / "pytorch_model.bin"
-  if not file.is_file():
-    yield file_dir
-    return
-  try:
-    # Keep PyTorch optional when loading safetensors checkpoints.
-    from safetensors import torch as safetensors_torch  # pylint: disable=import-outside-toplevel
-    import torch  # pylint: disable=import-outside-toplevel
-  except ImportError as error:
-    raise ImportError(
-        "This checkpoint contains PyTorch .bin weights. Install "
-        "google-tunix[legacy] or provide converted safetensors weights."
-    ) from error
-  with tempfile.TemporaryDirectory(prefix="tunix-converted-") as directory:
-    weights = torch.load(file, map_location="cpu", weights_only=True)
-    safetensors_torch.save_file(
-        {k: v.detach().contiguous().clone() for k, v in weights.items()},
-        str(pathlib.Path(directory) / "model.safetensors"),
-    )
-    yield directory
-
-
-def _save_lora_merged_model(
-    local_model_path, output_dir, lora_model, rank, alpha, key_mapping
-):
-  """Resolves checkpoint key names and delegates merging to the Tunix saver."""
-  reverse = {}
-  with safetensors.safe_open(
-      str(pathlib.Path(local_model_path) / "model.safetensors"),
-      framework="numpy",
-  ) as checkpoint:
-    for key in checkpoint.keys():
-      try:
-        destination, transform = torch_utils.torch_key_to_jax_key(
-            key_mapping, key
-        )
-      except ValueError:
-        continue
-      if destination.endswith(".kernel"):
-        if transform != ((1, 0), None):
-          raise ValueError(
-              f"Unsupported linear weight transform: {key}: {transform}"
-          )
-        reverse[destination.removesuffix(".kernel")] = key
+  if not (source / "model.safetensors").is_file():
+    raise ValueError("LoRA merge requires a single model.safetensors file")
   safetensors_saver.save_lora_merged_model_as_safetensors(
       local_model_path=local_model_path,
       output_dir=output_dir,
       lora_model=lora_model,
       rank=rank,
       alpha=alpha,
-      state_key_transform_fn=reverse.__getitem__,
+      state_key_transform_fn=_state_key_to_safetensors_key,
       transpose_rules={"weight": (1, 0)},
   )

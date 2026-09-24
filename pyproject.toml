@@ -71,6 +71,7 @@ dev = [
   # Manully install vLLM & tpu-inferece, which depends on jax[tpu]==0.7.2
 ]
 test = [
+  "torch>=2.6",  # Offline Hugging Face reference and legacy checkpoint tests.
   "pytest",
   "pytest-xdist",
   "gcsfs",

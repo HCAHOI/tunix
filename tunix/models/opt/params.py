@@ -15,6 +15,7 @@
 """Utils for loading and converting OPT PT weights."""
 
 import contextlib
+import functools
 import pathlib
 import shutil
 import tempfile
@@ -25,7 +26,6 @@ import safetensors
 from tunix.models import safetensors_loader
 from tunix.models import safetensors_saver
 from tunix.models.opt import model as model_lib
-from tunix.utils import torch_utils
 
 # The original facebook/opt checkpoints prefix keys with ``decoder.``; models
 # re-saved from ``OPTForCausalLM`` use ``model.decoder.``. Accept either.
@@ -132,7 +132,7 @@ def create_model_from_safe_tensors(
 def save_lora_merged_model_as_safetensors(
     local_model_path: str,
     output_dir: str,
-    lora_model,
+    lora_model: model_lib.OPT,
     rank: int,
     alpha: float,
 ):
@@ -146,8 +146,7 @@ def save_lora_merged_model_as_safetensors(
     alpha: LoRA scaling factor.
 
   Raises:
-    ValueError: The output would overwrite the source, the input is sharded,
-      or a linear weight requires an unsupported transformation.
+    ValueError: The output would overwrite the source, or the input is sharded.
     ImportError: PyTorch conversion dependencies are unavailable.
   """
   source = pathlib.Path(local_model_path).resolve()
@@ -160,9 +159,22 @@ def save_lora_merged_model_as_safetensors(
           "LoRA merge requires a single model.safetensors or "
           "pytorch_model.bin checkpoint; sharded export is not supported."
       )
-    key_mapping = _get_key_and_transform_mapping(lora_model.config)
-    _save_lora_merged_model(
-        weights_dir, output_dir, lora_model, rank, alpha, key_mapping
+    with safetensors.safe_open(
+        str(pathlib.Path(weights_dir) / "model.safetensors"), framework="numpy"
+    ) as checkpoint:
+      prefix = (
+          "" if "decoder.embed_tokens.weight" in checkpoint.keys() else "model."
+      )
+    safetensors_saver.save_lora_merged_model_as_safetensors(
+        local_model_path=weights_dir,
+        output_dir=output_dir,
+        lora_model=lora_model,
+        rank=rank,
+        alpha=alpha,
+        state_key_transform_fn=functools.partial(
+            _state_key_to_safetensors_key, prefix=prefix
+        ),
+        transpose_rules={"weight": (1, 0)},
     )
   if weights_dir != local_model_path:
     for file in pathlib.Path(local_model_path).iterdir():
@@ -222,34 +234,10 @@ def _safetensors_directory(file_dir: str):
     yield directory
 
 
-def _save_lora_merged_model(
-    local_model_path, output_dir, lora_model, rank, alpha, key_mapping
-):
-  """Resolves checkpoint key names and delegates merging to the Tunix saver."""
-  reverse = {}
-  with safetensors.safe_open(
-      str(pathlib.Path(local_model_path) / "model.safetensors"),
-      framework="numpy",
-  ) as checkpoint:
-    for key in checkpoint.keys():
-      try:
-        destination, transform = torch_utils.torch_key_to_jax_key(
-            key_mapping, key
-        )
-      except ValueError:
-        continue
-      if destination.endswith(".kernel"):
-        if transform != ((1, 0), None):
-          raise ValueError(
-              f"Unsupported linear weight transform: {key}: {transform}"
-          )
-        reverse[destination.removesuffix(".kernel")] = key
-  safetensors_saver.save_lora_merged_model_as_safetensors(
-      local_model_path=local_model_path,
-      output_dir=output_dir,
-      lora_model=lora_model,
-      rank=rank,
-      alpha=alpha,
-      state_key_transform_fn=reverse.__getitem__,
-      transpose_rules={"weight": (1, 0)},
-  )
+def _state_key_to_safetensors_key(lora_name: str, *, prefix: str) -> str:
+  """Maps a LoRA module path, preserving the checkpoint's decoder prefix."""
+  if lora_name == "lm_head":
+    return "lm_head.weight"
+  name = lora_name.removeprefix("embedder.")
+  name = name.replace(".attn.", ".self_attn.").replace(".mlp.", ".")
+  return f"{prefix}decoder.{name}.weight"
