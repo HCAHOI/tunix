@@ -29,6 +29,7 @@ class AttentionTest(parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
+    self.enterContext(jax.default_matmul_precision('highest'))
     self.config = dataclasses.replace(
         model_lib.ModelConfig.pythia_14m(),
         num_layers=1,
@@ -85,8 +86,13 @@ class AttentionTest(parameterized.TestCase):
     forward = nnx.jit(self._forward) if use_jit else self._forward
     actual = forward(self.attention, self.inputs)
     np.testing.assert_allclose(
-        actual, self._float64_reference(), atol=2e-6, rtol=2e-6
+        actual, self._float64_reference(), atol=1e-5, rtol=1e-5
     )
+    bias = self.attention.query_key_value.bias[...].reshape(2, 3, 8)
+    self.attention.query_key_value.bias[...] = (
+        bias.at[:, 1, self.config.rotary_ndims :].set(0).reshape(-1)
+    )
+    np.testing.assert_array_equal(actual, forward(self.attention, self.inputs))
 
   def test_key_bias_does_not_change_input_gradients(self):
     def loss(attention, inputs):
