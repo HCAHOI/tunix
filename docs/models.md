@@ -135,14 +135,14 @@ JIT, rather than clipping to the last embedding. OPT also accepts position `-1`
 for padding.
 
 After training a Qwix LoRA model, call its family's export function explicitly.
-For example, to merge a Pythia adapter into a single safetensors checkpoint:
+For example, to merge a GPT-Neo adapter into a single safetensors checkpoint:
 
 ```python
-from tunix.models.gpt_neox import params as neox_params
+from tunix.models.gpt_neo import params as neo_params
 
-neox_params.save_lora_merged_model_as_safetensors(
+neo_params.save_lora_merged_model_as_safetensors(
     local_model_path=model_path,
-    output_dir="merged-pythia",
+    output_dir="merged-gpt-neo",
     lora_model=lora_model,
     rank=rank,
     alpha=alpha,
