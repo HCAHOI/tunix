@@ -113,6 +113,21 @@ checkpoint contains `pytorch_model.bin`; install `google-tunix[legacy]` to
 enable its local conversion to a temporary safetensors file. The source
 checkpoint is preserved. Sharded PyTorch `.bin` checkpoints are not supported.
 
+For TPU loading, specify `load_dtype` as well as `dtype`: they control loaded
+parameters and model computation, respectively. For example:
+
+```python
+import jax.numpy as jnp
+from tunix.models import automodel
+
+model, model_path = automodel.AutoModel.from_pretrained(
+    "EleutherAI/gpt-neo-125m",
+    mesh=mesh,
+    load_dtype=jnp.float32,
+    dtype=jnp.float32,
+)
+```
+
 GPT-Neo and OPT use learned position embeddings with 2048 positions. The sampler
 rejects requests that would require an out-of-range position, even if the cache
 is larger. Direct model calls return NaNs for invalid positions, including under
