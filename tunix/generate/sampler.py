@@ -215,11 +215,13 @@ class Sampler(base_sampler.BaseSampler):
     """Initializes the sampler.
 
     Args:
-      transformer: an instance of the transformer.
+      transformer: An instance of the transformer. If it exposes
+        `max_position_embeddings`, generation is bounded by that position table.
       tokenizer: a tokenizer for the given model.
       cache_config: configuration for the KV cache.
       image_processor: The image processor.
     """
+
     self.tokenizer = tokenizer
     if not isinstance(tokenizer, tok_adapter.TokenizerAdapter):
       self.tokenizer = tok_adapter.TokenizerAdapter(tokenizer)
@@ -934,6 +936,24 @@ class Sampler(base_sampler.BaseSampler):
           f'Total sampling steps {total_sampling_steps} must be less than the'
           f' cache size {self.cache_config.cache_size}.'
       )
+
+    position_limit = getattr(self.transformer, 'max_position_embeddings', None)
+    if position_limit is not None:
+      position_counts = (
+          np.asarray(prompt_lengths)
+          if exact_input
+          else np.count_nonzero(
+              all_input_ids != self.tokenizer.pad_id(), axis=1
+          )
+      )
+      # The last sampled token is returned without another model call. Padding
+      # slots and unused cache capacity do not consume absolute positions.
+      required_positions = position_counts + max(max_generation_steps - 1, 0)
+      if np.any(required_positions > position_limit):
+        raise ValueError(
+            'Prompt and generation would exceed the model position limit '
+            f'of {position_limit}.'
+        )
 
     if seed is None:
       seed = jax.random.PRNGKey(0)  # pyrefly: ignore[bad-assignment]

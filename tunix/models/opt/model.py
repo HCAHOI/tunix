@@ -183,8 +183,7 @@ class ModelConfig:
 
   @classmethod
   def opt_350m(cls):
-    # facebook/opt-350m: post-LN, 512-d embeddings projected to 1024-d hidden.
-    """Returns the registered opt_350m configuration."""
+    """Returns OPT-350M with post-LN and 512-dimensional token embeddings."""
     return cls(
         num_layers=24,
         vocab_size=50272,
@@ -533,12 +532,18 @@ class Embedder(nnx.Module):
   def encode(
       self, tokens: jaxtyping.ArrayLike, positions: jaxtyping.ArrayLike
   ) -> jaxtyping.Array:
-    """Embeds tokens and positions into the configured compute dtype."""
+    """Embeds tokens and positions; invalid positions produce NaNs under JIT."""
     x = self.embed_tokens[(tokens,)]
     if self.project_in is not None:
       x = self.project_in(x)
-    pos = jnp.asarray(positions) + _OPT_POS_OFFSET
-    x = x + self.embed_positions[(pos,)]
+    positions = jnp.asarray(positions)
+    # OPT uses position -1 for padding, which maps to embedding row 1.
+    pos = jnp.where(
+        positions >= -1,
+        positions + _OPT_POS_OFFSET,
+        self.embed_positions.shape[0],
+    )
+    x = x + jnp.take(self.embed_positions[...], pos, axis=0, mode="fill")
     return jnp.astype(x, self.dtype)
 
   @jax.named_scope("embedder_decode")
@@ -555,6 +560,7 @@ class OPT(nnx.Module):
   def __init__(self, config: ModelConfig, *, rngs: nnx.Rngs):
     self.config = config
     self.num_embed = config.vocab_size
+    self.max_position_embeddings = config.max_position_embeddings
     self.embedder = Embedder(config, rngs=rngs)
     self.layers = compat.ModuleList(
         [DecoderLayer(config, rngs=rngs) for _ in range(config.num_layers)]

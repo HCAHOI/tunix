@@ -107,11 +107,35 @@ interface:
 - `EleutherAI/gpt-neo-125m`
 - `facebook/opt-350m`
 
-They support Tunix's native `Sampler`, causal language-model fine-tuning, and Qwix
-LoRA. Pythia and GPT-Neo load safetensors weights. The official OPT-350M checkpoint
-contains `pytorch_model.bin`; install `google-tunix[legacy]` to enable its local
-conversion to a temporary safetensors file. The source checkpoint is preserved.
-Sharded PyTorch `.bin` checkpoints are not supported.
+They support Tunix's native `Sampler`, causal language-model fine-tuning, and
+Qwix LoRA. Pythia and GPT-Neo load safetensors weights. The official OPT-350M
+checkpoint contains `pytorch_model.bin`; install `google-tunix[legacy]` to
+enable its local conversion to a temporary safetensors file. The source
+checkpoint is preserved. Sharded PyTorch `.bin` checkpoints are not supported.
+
+GPT-Neo and OPT use learned position embeddings with 2048 positions. The sampler
+rejects requests that would require an out-of-range position, even if the cache
+is larger. Direct model calls return NaNs for invalid positions, including under
+JIT, rather than clipping to the last embedding. OPT also accepts position `-1`
+for padding.
+
+After training a Qwix LoRA model, call its family's export function explicitly.
+For example, to merge a Pythia adapter into a single safetensors checkpoint:
+
+```python
+from tunix.models.gpt_neox import params as neox_params
+
+neox_params.save_lora_merged_model_as_safetensors(
+    local_model_path=model_path,
+    output_dir="merged-pythia",
+    lora_model=lora_model,
+    rank=rank,
+    alpha=alpha,
+)
+```
+
+Use the same rank and alpha as during LoRA training. The source checkpoint must
+contain a single `model.safetensors` file (or, for OPT, `pytorch_model.bin`).
 
 ### Specifying Model Source
 

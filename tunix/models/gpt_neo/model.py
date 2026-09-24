@@ -26,7 +26,6 @@ from collections.abc import Callable
 import dataclasses
 import enum
 import functools
-from typing import Tuple
 
 from flax import nnx
 import jax
@@ -160,7 +159,7 @@ class ModelConfig:
   max_position_embeddings: int
   window_size: int
   # Per-layer attention pattern; each entry is "global" or "local".
-  attention_layers: Tuple[str, ...]
+  attention_layers: tuple[str, ...]
   norm_eps: float  # layer_norm_epsilon
   hidden_act: str = "gelu_new"
   use_tied_embedding: bool = True
@@ -176,8 +175,7 @@ class ModelConfig:
 
   @classmethod
   def gpt_neo_125m(cls):
-    # EleutherAI/gpt-neo-125m: 12 layers, alternating global/local attention.
-    """Returns the registered gpt_neo_125m configuration."""
+    """Returns GPT-Neo-125M with alternating global and local attention."""
     return cls(
         num_layers=12,
         vocab_size=50257,
@@ -487,13 +485,20 @@ class Embedder(nnx.Module):
   def encode(
       self, tokens: jaxtyping.ArrayLike, positions: jaxtyping.ArrayLike
   ) -> jaxtyping.Array:
-    """Embeds tokens and positions into the configured compute dtype."""
-    x = self.input_embedding[(tokens,)] + self.position_embedding[(positions,)]
+    """Embeds tokens and positions; invalid positions produce NaNs under JIT."""
+    positions = jnp.asarray(positions)
+    # Disable negative-index wrapping and silent clipping of positive overflow.
+    positions = jnp.where(
+        positions >= 0, positions, self.position_embedding.shape[0]
+    )
+    position_embeddings = jnp.take(
+        self.position_embedding[...], positions, axis=0, mode="fill"
+    )
+    x = self.input_embedding[(tokens,)] + position_embeddings
     return jnp.astype(x, self.dtype)
 
   @jax.named_scope("embedder_decode")
   def decode(self, x: jaxtyping.ArrayLike) -> jaxtyping.Array:
-    # Tied LM head: logits = hidden @ wte^T.
     """Projects hidden states to vocabulary logits using tied embeddings."""
     return jnp.dot(x, self.input_embedding.value.T)
 
@@ -504,6 +509,7 @@ class GPTNeo(nnx.Module):
   def __init__(self, config: ModelConfig, *, rngs: nnx.Rngs):
     self.config = config
     self.num_embed = config.vocab_size
+    self.max_position_embeddings = config.max_position_embeddings
     self.embedder = Embedder(
         vocab_size=config.vocab_size,
         embed_dim=config.embed_dim,

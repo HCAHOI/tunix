@@ -24,14 +24,11 @@ from tunix.models.gpt_neo import model as model_lib
 
 
 def _get_key_and_transform_mapping(cfg: model_lib.ModelConfig):
-  # Mapping of torch_keys -> (nnx_keys, (permute_rule, reshape_rule)).
-  # GPT-Neo uses nn.Linear everywhere (not GPT-2 Conv1D), so PyTorch
-  # weights are [out, in]; nnx.Linear kernels are [in, out] -> transpose
-  # with permute (1, 0).
-  # Embeddings (wte/wpe) load as-is. The checkpoint's causal-mask buffers
-  # (attn.attention.bias / masked_bias) are unmapped and skipped by the loader.
-  # The LM head is tied to wte (no separate embed_out weight).
-  """Returns HF-to-NNX parameter names and transforms for GPT-Neo."""
+  """Returns HF-to-NNX parameter names and transforms for GPT-Neo.
+
+  Linear weights transpose from [out, in] to [in, out]. Embeddings load as-is;
+  checkpoint causal-mask buffers are skipped by the loader.
+  """
   mapping = {
       r"transformer\.wte\.weight$": ("embedder.input_embedding", None),
       r"transformer\.wpe\.weight$": ("embedder.position_embedding", None),
