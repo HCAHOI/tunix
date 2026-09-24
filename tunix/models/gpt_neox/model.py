@@ -287,18 +287,19 @@ class LayerNorm(nnx.Module):
     return jnp.astype(out, self.dtype)
 
 
-class Attention(nnx.Module):
-  """GPT-NeoX multi-head attention with fused QKV and partial rotary."""
+class QKVProjection(nnx.Linear):
+  """Fused QKV projection without the softmax-invariant key bias.
+
+  Non-rotary key biases add the same constant to every unmasked score in an
+  attention row. Large pretrained biases can erase score differences in
+  float32. Omit that part before adding the bias, preserving query, value,
+  and rotary key biases. The full parameter is retained for checkpoint
+  compatibility; its unused components have zero gradients.
+  """
 
   def __init__(self, config: ModelConfig, *, rngs: nnx.Rngs):
-    self.config = config
-    self.num_heads = config.num_heads
-    self.head_dim = config.head_dim
-    self.rotary_ndims = config.rotary_ndims
-    self.scale = config.head_dim**-0.5
-    hidden = config.embed_dim
-    self.query_key_value = nnx.Linear(
-        hidden,
+    super().__init__(
+        config.embed_dim,
         3 * config.num_heads * config.head_dim,
         use_bias=True,
         rngs=rngs,
@@ -312,6 +313,36 @@ class Attention(nnx.Module):
             P(config.shd_config.column_weight[-1]),
         ),
     )
+    self.num_heads = config.num_heads
+    self.head_dim = config.head_dim
+    self.rotary_ndims = config.rotary_ndims
+
+  def __call__(self, inputs: jax.Array) -> jax.Array:
+    bias = self.bias[...].reshape(self.num_heads, 3, self.head_dim)
+    bias = bias.at[:, 1, self.rotary_ndims :].set(0).reshape(-1)
+    inputs, kernel, bias = self.promote_dtype(
+        (inputs, self.kernel[...], bias), dtype=self.dtype
+    )
+    output = self.dot_general(
+        inputs,
+        kernel,
+        (((inputs.ndim - 1,), (0,)), ((), ())),
+        precision=self.precision,
+    )
+    return output + bias
+
+
+class Attention(nnx.Module):
+  """GPT-NeoX multi-head attention with fused QKV and partial rotary."""
+
+  def __init__(self, config: ModelConfig, *, rngs: nnx.Rngs):
+    self.config = config
+    self.num_heads = config.num_heads
+    self.head_dim = config.head_dim
+    self.rotary_ndims = config.rotary_ndims
+    self.scale = config.head_dim**-0.5
+    hidden = config.embed_dim
+    self.query_key_value = QKVProjection(config, rngs=rngs)
     self.dense = nnx.Linear(
         config.num_heads * config.head_dim,
         hidden,
