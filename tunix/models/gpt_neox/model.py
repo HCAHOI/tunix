@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""GPT-NeoX / Pythia decoder-only language model.
-
-Blocks use LayerNorm, fused biased query/key/value projections, partial rotary
-embeddings, and a dense GELU MLP. Pythia uses parallel attention and MLP
-residuals.
-The untied language-model head returns float32 logits alongside the KV cache.
-"""
+"""GPT-NeoX / Pythia decoder-only language model."""
 
 from collections.abc import Callable
 import dataclasses
@@ -78,18 +72,7 @@ class ShardingConfig:
 
 
 def _get_activation(name: str) -> Callable[[jax.Array], jax.Array]:
-  """Returns the JAX activation corresponding to a supported HF name.
-
-  Args:
-    name: One of relu, silu, swish, gelu, gelu_new, or gelu_fast. GELU uses the
-      exact error function; gelu_new and gelu_fast use the tanh approximation.
-
-  Returns:
-    An elementwise activation callable.
-
-  Raises:
-    ValueError: The activation name is unsupported.
-  """
+  """Returns the JAX activation corresponding to a supported HF name."""
   if name == "relu":
     return jax.nn.relu
   if name in ("silu", "swish"):
@@ -105,7 +88,7 @@ def _get_activation(name: str) -> Callable[[jax.Array], jax.Array]:
 
 
 def _attention_mask(tokens, cache, mask, segment_ids):
-  """Build a causal mask in cache-slot coordinates, including packed segments.
+  """Builds a causal mask in cache-slot coordinates, including packed segments.
 
   Positional embeddings may reset at padding or packed-sequence boundaries;
   local attention and cache writes must instead use physical cache slots.

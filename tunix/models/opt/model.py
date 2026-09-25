@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""OPT (Open Pre-trained Transformer) decoder-only language model.
-
-Learned position embeddings have an offset of two. Optional input and output
-projections connect word_embed_proj_dim to hidden_size. Blocks use scaled,
-biased attention and a configurable activation (ReLU by default).
-
-do_layer_norm_before selects the residual layout and decoder-level final norm;
-OPT-350M uses post-LayerNorm blocks. The tied language-model head returns
-float32 logits alongside the KV cache.
-"""
+"""OPT (Open Pre-trained Transformer) decoder-only language model."""
 
 from collections.abc import Callable
 import dataclasses
@@ -84,18 +75,7 @@ class ShardingConfig:
 
 
 def _get_activation(name: str) -> Callable[[jax.Array], jax.Array]:
-  """Returns the JAX activation corresponding to a supported HF name.
-
-  Args:
-    name: One of relu, silu, swish, gelu, gelu_new, or gelu_fast. GELU uses the
-      exact error function; gelu_new and gelu_fast use the tanh approximation.
-
-  Returns:
-    An elementwise activation callable.
-
-  Raises:
-    ValueError: The activation name is unsupported.
-  """
+  """Returns the JAX activation corresponding to a supported HF name."""
   if name == "relu":
     return jax.nn.relu
   if name in ("silu", "swish"):
@@ -111,7 +91,7 @@ def _get_activation(name: str) -> Callable[[jax.Array], jax.Array]:
 
 
 def _attention_mask(tokens, cache, mask, segment_ids):
-  """Build a causal mask in cache-slot coordinates, including packed segments.
+  """Builds a causal mask in cache-slot coordinates, including packed segments.
 
   Positional embeddings may reset at padding or packed-sequence boundaries;
   local attention and cache writes must instead use physical cache slots.
