@@ -163,6 +163,41 @@ class SafetensorsLoaderTest(parameterized.TestCase):
         loaded_state,
     )
 
+  @parameterized.product(
+      mode=('optimized', 'original'),
+      dtype=(None, jnp.float32),
+      include_integer_buffer=(False, True),
+  )
+  def test_mixed_dtype_checkpoint(self, mode, dtype, include_integer_buffer):
+    tensors = {k: np.asarray(v).copy() for k, v in self.tensors.items()}
+    tensors['emb.embedding'] = tensors['emb.embedding'].astype(np.float16)
+    tensors['lm_head.kernel'] = tensors['lm_head.kernel'].astype(
+        ml_dtypes.bfloat16
+    )
+    if include_integer_buffer:
+      # HF checkpoints can include integer buffers that are not model weights.
+      tensors['position_ids'] = np.arange(8, dtype=np.int64)
+    stnp.save_file(tensors, os.path.join(self.st_dir, 'model.safetensors'))
+
+    loaded = safetensors_loader.load_and_create_model(
+        self.st_dir,
+        test_common.ToyTransformer,
+        self.model.config,
+        key_mapping,
+        dtype=dtype,
+        mode=mode,
+    )
+
+    for path, value in jax.tree_util.tree_flatten_with_path(
+        nnx.state(loaded).to_pure_dict()
+    )[0]:
+      key = safetensors_loader.path_to_key(path)
+      expected = tensors[key]
+      if dtype is not None:
+        expected = expected.astype(dtype)
+      self.assertEqual(value.dtype, expected.dtype)
+      np.testing.assert_array_equal(value, expected)
+
   def test_load_and_create_model_from_gcs(self):
     if env_utils.is_internal_env():
       self.skipTest('GCS is not supported in GOOGLE_INTERNAL_PACKAGE_PATH')
